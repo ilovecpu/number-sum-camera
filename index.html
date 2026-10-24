@@ -9,7 +9,7 @@
 :root {
   --fg: #ffffff;
   --muted: rgba(255,255,255,.7);
-  --panel: rgba(12,14,20,.78);
+  --panel: rgba(12,14,20,.82);
   --accent: #ffd23f;
   --box: #3ee07a;
   --off: #ff6b6b;
@@ -20,8 +20,10 @@
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 html, body { margin: 0; height: 100%; background: #000; color: var(--fg); font-family: var(--font); overflow: hidden; }
-#stage { position: fixed; inset: 0; }
-video, #overlay { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+#stage { position: fixed; inset: 0; touch-action: manipulation; }
+video, #photoImg, #overlay { position: absolute; inset: 0; width: 100%; height: 100%; }
+video { object-fit: cover; }
+#photoImg { object-fit: contain; background: #000; }
 #overlay { pointer-events: none; }
 
 .top {
@@ -34,6 +36,9 @@ video, #overlay { position: absolute; inset: 0; width: 100%; height: 100%; objec
 .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); margin-right: 6px; vertical-align: 1px; }
 .dot.live { background: var(--box); }
 .dot.paused { background: var(--accent); }
+.dot.busy { background: var(--accent); animation: blink 1s infinite; }
+@keyframes blink { 50% { opacity: .2; } }
+@media (prefers-reduced-motion: reduce) { .dot.busy { animation: none; } }
 
 .bottom {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 2;
@@ -45,84 +50,107 @@ video, #overlay { position: absolute; inset: 0; width: 100%; height: 100%; objec
 .sumrow .lbl { font-size: 13px; color: var(--muted); }
 #total { font: 700 clamp(34px, 11vw, 52px) var(--mono); font-variant-numeric: tabular-nums; color: var(--accent); white-space: nowrap; }
 #nums { font: 13px var(--mono); color: var(--muted); max-height: 3.2em; overflow-y: auto; overflow-wrap: anywhere; }
+#hint { font-size: 12px; color: var(--muted); }
 .btns { display: flex; gap: 8px; }
-button {
-  flex: 1; padding: 13px 10px; border-radius: 12px; border: 1px solid rgba(255,255,255,.25);
+button, .btnlike {
+  flex: 1; display: flex; align-items: center; justify-content: center; text-align: center;
+  padding: 13px 8px; border-radius: 12px; border: 1px solid rgba(255,255,255,.25);
   background: rgba(255,255,255,.08); color: var(--fg); font: 600 15px var(--font); cursor: pointer;
 }
-button.primary { background: var(--accent); border-color: var(--accent); color: #111; }
-button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.primary { background: var(--accent) !important; border-color: var(--accent) !important; color: #111 !important; }
+button:focus-visible, .btnlike:focus-within { outline: 3px solid var(--accent); outline-offset: 2px; }
+.opts { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
 label.opt { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
 
 #start {
-  position: fixed; inset: 0; z-index: 3; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px;
+  position: fixed; inset: 0; z-index: 3; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
   padding: 24px max(24px, env(safe-area-inset-right, 0px)) 24px max(24px, env(safe-area-inset-left, 0px));
   text-align: center; background: #0d0f14;
 }
 #start h1 { margin: 0; font-size: 24px; }
-#start p { margin: 0; color: var(--muted); max-width: 32ch; line-height: 1.6; }
-#start button { flex: none; width: min(320px, 100%); }
-#msg { color: var(--off); min-height: 1.4em; }
+#start p { margin: 0 0 6px; color: var(--muted); max-width: 32ch; line-height: 1.6; }
+#start button, #start .btnlike { flex: none; width: min(320px, 100%); }
+#msg { color: var(--off); min-height: 1.4em; max-width: 32ch; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 </style>
 </head>
 <body>
 <div id="stage">
   <video id="video" playsinline muted autoplay></video>
+  <img id="photoImg" alt="고른 사진" hidden>
   <canvas id="overlay"></canvas>
 </div>
 
-<div class="top">
+<div class="top" id="topBar">
   <span><span class="dot" id="dot"></span><span id="state">준비 중</span></span>
-  <label class="opt"><input type="checkbox" id="commaDec"> 쉼표를 소수점으로</label>
+  <div class="opts">
+    <label class="opt"><input type="checkbox" id="decOnly"> 소수 있는 숫자만</label>
+    <label class="opt"><input type="checkbox" id="commaDec"> 쉼표를 소수점으로</label>
+  </div>
 </div>
 
-<div class="bottom">
+<div class="bottom" id="bottomBar">
   <div class="sumrow">
     <span class="lbl">합계 · <span id="count">0</span>개</span>
     <span id="total">0.00</span>
   </div>
   <div id="nums">네모 칸 안에 숫자를 비춰 주세요.</div>
+  <div id="hint" hidden>숫자를 누르면 합계에서 빼거나 다시 넣을 수 있어요.</div>
   <div class="btns">
     <button id="pause" class="primary" type="button">멈추기</button>
+    <label class="btnlike" id="photoBtn">사진<input type="file" id="photoInput" accept="image/*" class="visually-hidden"></label>
     <button id="copy" type="button">합계 복사</button>
   </div>
 </div>
 
 <div id="start">
   <h1>실시간 숫자 합계</h1>
-  <p>카메라에 비친 숫자를 계속 읽어서 더합니다. 합계는 소수점 둘째 자리까지 표시해요.</p>
+  <p>카메라에 비친 숫자를 계속 읽어서 더합니다. 사진을 찍거나 골라서 읽을 수도 있어요. 합계는 소수점 둘째 자리까지 표시합니다.</p>
   <button id="go" class="primary" type="button">카메라 켜기</button>
+  <label class="btnlike">사진으로 하기<input type="file" id="startPhoto" accept="image/*" class="visually-hidden"></label>
   <div id="msg"></div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
 <script>
 const $ = (id) => document.getElementById(id);
-const video = $("video"), overlay = $("overlay"), octx = overlay.getContext("2d");
+const video = $("video"), img = $("photoImg"), overlay = $("overlay"), octx = overlay.getContext("2d");
 const work = document.createElement("canvas"), wctx = work.getContext("2d", { willReadFrequently: true });
 
-let worker = null, paused = false, busy = false;
-let lastWords = [];          // [{x,y,w,h,value,on}] in video pixel coords
-let history = [];            // recent totals, to smooth flicker
+let mode = "live";           // "live" | "photo"
+let cameraOn = false, paused = false, busy = false;
+let found = [];              // [{value, x, y, w, h, on}] in source pixel coords
+let history = [];            // recent live frames: {key, list}
+let workerPromise = null;
 
-// The scan area is the middle of the frame: full width minus margins, 40% of the height.
+function getWorker() {
+  workerPromise ??= (async () => {
+    const w = await Tesseract.createWorker("eng");
+    // ':' and '/' are allowed so times and dates come out intact and can be skipped.
+    await w.setParameters({ tessedit_char_whitelist: "0123456789.,-:/", tessedit_pageseg_mode: "11" });
+    return w;
+  })();
+  workerPromise.catch(() => { workerPromise = null; });
+  return workerPromise;
+}
+
+// Live scan area: middle of the frame, 90% wide and 40% tall.
 function roi(vw, vh) {
   const w = vw * 0.9, h = vh * 0.4;
   return { x: (vw - w) / 2, y: (vh - h) / 2, w, h };
 }
 
-function parseNumbers(text, commaIsDecimal) {
-  const out = [];
+function parseWord(text, commaIsDecimal) {
+  const t = text.trim().replace(/−/g, "-");
+  if (!t || /[:/]/.test(t)) return null;                    // time or date
   const re = commaIsDecimal
-    ? /[-−]?\d{1,3}(?:\.\d{3})+(?:,\d+)?|[-−]?\d+(?:,\d+)?/g
-    : /[-−]?\d{1,3}(?:,\d{3})+(?:\.\d+)?|[-−]?\d+(?:\.\d+)?/g;
-  for (const m of text.matchAll(re)) {
-    let s = m[0].replace("−", "-");
-    s = commaIsDecimal ? s.replace(/\./g, "").replace(",", ".") : s.replace(/,/g, "");
-    const v = Number(s);
-    if (isFinite(v)) out.push({ raw: m[0], value: v });
-  }
-  return out;
+    ? /^-?(?:\d{1,3}(?:\.\d{3})+|\d+)(?:,\d+)?$/
+    : /^-?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?$/;
+  const core = t.replace(/^[.,]+|[.,]+$/g, "");
+  if (!re.test(core)) return null;
+  const s = commaIsDecimal ? core.replace(/\./g, "").replace(",", ".") : core.replace(/,/g, "");
+  const v = Number(s);
+  return isFinite(v) ? v : null;
 }
 
 // Add in scaled integers so 0.1 + 0.2 is exactly 0.30, then round to 2 places.
@@ -134,90 +162,153 @@ function sumOf(vals) {
   return Math.sign(s) * Math.round(Math.abs(s) * 100 + 1e-9) / 100;
 }
 const fmt = (n) => n.toLocaleString("ko-KR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmtItem = (n) => n.toLocaleString("ko-KR", { maximumFractionDigits: 6 });
 
 function setState(text, cls) {
   $("state").textContent = text;
   $("dot").className = "dot" + (cls ? " " + cls : "");
 }
 
-// Map a point in video pixels to the on-screen canvas, matching object-fit: cover.
-function mapper() {
-  const cw = overlay.clientWidth, ch = overlay.clientHeight;
-  const vw = video.videoWidth, vh = video.videoHeight;
-  const s = Math.max(cw / vw, ch / vh);
-  const ox = (cw - vw * s) / 2, oy = (ch - vh * s) / 2;
-  return { s, ox, oy, cw, ch };
+// Grayscale + contrast stretch by hand (Safari's canvas has no ctx.filter).
+function prepare(source, sx, sy, sw, sh, targetW) {
+  const scale = Math.min(2.5, targetW / sw);
+  work.width = Math.round(sw * scale); work.height = Math.round(sh * scale);
+  wctx.drawImage(source, sx, sy, sw, sh, 0, 0, work.width, work.height);
+  const im = wctx.getImageData(0, 0, work.width, work.height), d = im.data;
+  let lo = 255, hi = 0;
+  for (let i = 0; i < d.length; i += 4) {
+    const g = (d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114) | 0;
+    d[i] = g; if (g < lo) lo = g; if (g > hi) hi = g;
+  }
+  const range = Math.max(1, hi - lo);
+  for (let i = 0; i < d.length; i += 4) {
+    const g = Math.max(0, Math.min(255, ((d[i] - lo) * 255 / range - 128) * 1.4 + 128));
+    d[i] = d[i + 1] = d[i + 2] = g;
+  }
+  wctx.putImageData(im, 0, 0);
+  return scale;
 }
 
-function draw() {
-  const dpr = window.devicePixelRatio || 1;
-  const { s, ox, oy, cw, ch } = mapper();
-  if (overlay.width !== cw * dpr) { overlay.width = cw * dpr; overlay.height = ch * dpr; }
-  octx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  octx.clearRect(0, 0, cw, ch);
-  if (!video.videoWidth) return;
-  const r = roi(video.videoWidth, video.videoHeight);
-  // Dim outside the scan area.
-  octx.fillStyle = "rgba(0,0,0,.35)";
-  octx.fillRect(0, 0, cw, ch);
-  octx.clearRect(ox + r.x * s, oy + r.y * s, r.w * s, r.h * s);
-  octx.strokeStyle = paused ? "#ffd23f" : "rgba(255,255,255,.9)";
-  octx.lineWidth = 2;
-  octx.strokeRect(ox + r.x * s, oy + r.y * s, r.w * s, r.h * s);
-  octx.font = "600 14px ui-monospace, Menlo, monospace";
-  for (const w of lastWords) {
-    const x = ox + w.x * s, y = oy + w.y * s;
-    octx.strokeStyle = "#3ee07a"; octx.lineWidth = 2;
-    octx.strokeRect(x, y, w.w * s, w.h * s);
-    const label = String(w.value);
-    const tw = octx.measureText(label).width + 8;
-    octx.fillStyle = "#3ee07a";
-    octx.fillRect(x, y - 18, tw, 18);
-    octx.fillStyle = "#000";
-    octx.fillText(label, x + 4, y - 4);
+async function readNumbers(source, sx, sy, sw, sh, targetW) {
+  const worker = await getWorker();
+  const scale = prepare(source, sx, sy, sw, sh, targetW);
+  const { data } = await worker.recognize(work);
+  const comma = $("commaDec").checked, decOnly = $("decOnly").checked;
+  const out = [];
+  for (const w of data.words || []) {
+    if (w.confidence < 60) continue;
+    const v = parseWord(w.text, comma);
+    if (v == null) continue;
+    if (decOnly && !/[.,]\d+$/.test(w.text.trim())) continue;
+    out.push({
+      value: v, on: true,
+      x: sx + w.bbox.x0 / scale, y: sy + w.bbox.y0 / scale,
+      w: (w.bbox.x1 - w.bbox.x0) / scale, h: (w.bbox.y1 - w.bbox.y0) / scale,
+    });
+  }
+  out.sort((a, b) => (Math.abs(a.y - b.y) < a.h * 0.6 ? a.x - b.x : a.y - b.y));
+  return out;
+}
+
+function sourceInfo() {
+  return mode === "photo"
+    ? { el: img, w: img.naturalWidth, h: img.naturalHeight, fit: "contain" }
+    : { el: video, w: video.videoWidth, h: video.videoHeight, fit: "cover" };
+}
+
+// Map source pixels to the on-screen canvas, matching the element's object-fit.
+function mapper() {
+  const cw = overlay.clientWidth, ch = overlay.clientHeight;
+  const { w, h, fit } = sourceInfo();
+  const s = fit === "cover" ? Math.max(cw / w, ch / h) : Math.min(cw / w, ch / h);
+  return { s, ox: (cw - w * s) / 2, oy: (ch - h * s) / 2, cw, ch };
+}
+
+// A photo fits between the bars so every number can be tapped; live video fills the screen.
+function layoutStage() {
+  const st = $("stage").style;
+  if (mode === "photo") {
+    st.top = $("topBar").offsetHeight + "px";
+    st.bottom = $("bottomBar").offsetHeight + "px";
+  } else {
+    st.top = st.bottom = "0px";
   }
 }
 
-function showResult(found) {
-  lastWords = found;
-  const vals = found.map(f => f.value);
-  const t = sumOf(vals);
-  history.push(t); if (history.length > 3) history.shift();
-  // Show the total only once it repeats, so one misread frame doesn't flash a wrong sum.
-  const stable = history.filter(h => h === t).length >= 2 || history.length < 2;
-  if (stable) {
-    $("total").textContent = fmt(t);
-    $("count").textContent = vals.length;
-    $("nums").textContent = vals.length ? vals.map(v => v.toLocaleString("ko-KR", { maximumFractionDigits: 6 })).join(" + ") : "네모 칸 안에 숫자를 비춰 주세요.";
+function draw() {
+  layoutStage();
+  const dpr = window.devicePixelRatio || 1;
+  const cw = overlay.clientWidth, ch = overlay.clientHeight;
+  if (overlay.width !== Math.round(cw * dpr) || overlay.height !== Math.round(ch * dpr)) {
+    overlay.width = Math.round(cw * dpr); overlay.height = Math.round(ch * dpr);
+  }
+  octx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  octx.clearRect(0, 0, cw, ch);
+  const src = sourceInfo();
+  if (!src.w) return;
+  const { s, ox, oy } = mapper();
+  if (mode === "live") {
+    const r = roi(src.w, src.h);
+    octx.fillStyle = "rgba(0,0,0,.35)";
+    octx.fillRect(0, 0, cw, ch);
+    octx.clearRect(ox + r.x * s, oy + r.y * s, r.w * s, r.h * s);
+    octx.strokeStyle = paused ? "#ffd23f" : "rgba(255,255,255,.9)";
+    octx.lineWidth = 2;
+    octx.strokeRect(ox + r.x * s, oy + r.y * s, r.w * s, r.h * s);
+  }
+  octx.font = "600 13px ui-monospace, Menlo, monospace";
+  octx.textBaseline = "middle";
+  for (const f of found) {
+    const x = ox + f.x * s - 3, y = oy + f.y * s - 3, w = f.w * s + 6, h = f.h * s + 6;
+    const color = f.on ? "#3ee07a" : "#ff6b6b";
+    octx.strokeStyle = color; octx.lineWidth = 2;
+    octx.strokeRect(x, y, w, h);
+    if (!f.on) { octx.beginPath(); octx.moveTo(x, y + h); octx.lineTo(x + w, y); octx.stroke(); }
+    // Label to the right of the box, so the digits themselves stay visible.
+    const label = f.on ? fmtItem(f.value) : "제외";
+    const tw = octx.measureText(label).width + 8;
+    octx.fillStyle = color;
+    octx.fillRect(x + w + 2, y + h / 2 - 9, tw, 18);
+    octx.fillStyle = "#000";
+    octx.fillText(label, x + w + 6, y + h / 2);
+  }
+}
+
+function showTotals() {
+  const vals = found.filter(f => f.on).map(f => f.value);
+  $("total").textContent = fmt(sumOf(vals));
+  $("count").textContent = vals.length;
+  $("nums").textContent = found.length
+    ? found.map(f => f.on ? fmtItem(f.value) : "(" + fmtItem(f.value) + ")").join(" + ").replace(/\+ -/g, "− ")
+    : (mode === "photo" ? "사진에서 숫자를 찾지 못했어요." : "네모 칸 안에 숫자를 비춰 주세요.");
+  $("hint").hidden = !(found.length && (paused || mode === "photo"));
+  layoutStage();
+  draw();
+}
+
+// A live frame's numbers are shown only when the next frame reads the same set,
+// so one misread frame doesn't flash a wrong total.
+function acceptFrame(list) {
+  const key = list.map(f => f.value).join("|");
+  history.push({ key, list });
+  if (history.length > 3) history.shift();
+  if (history.filter(h => h.key === key).length >= 2 || !found.length) {
+    found = list;
+    showTotals();
   }
 }
 
 async function tick() {
-  if (paused || busy || !worker || !video.videoWidth) return;
+  if (mode !== "live" || paused || busy || !video.videoWidth) return;
   busy = true;
   try {
-    const vw = video.videoWidth, vh = video.videoHeight, r = roi(vw, vh);
-    const scale = Math.min(1, 1200 / r.w);
-    work.width = Math.round(r.w * scale); work.height = Math.round(r.h * scale);
-    wctx.filter = "grayscale(1) contrast(1.6)";
-    wctx.drawImage(video, r.x, r.y, r.w, r.h, 0, 0, work.width, work.height);
-    const { data } = await worker.recognize(work);
-    if (paused) return;
-    const comma = $("commaDec").checked;
-    const found = [];
-    for (const w of data.words || []) {
-      if (w.confidence < 55) continue;
-      for (const n of parseNumbers(w.text, comma)) {
-        found.push({
-          value: n.value,
-          x: r.x + w.bbox.x0 / scale, y: r.y + w.bbox.y0 / scale,
-          w: (w.bbox.x1 - w.bbox.x0) / scale, h: (w.bbox.y1 - w.bbox.y0) / scale,
-        });
-      }
-    }
-    showResult(found);
+    const r = roi(video.videoWidth, video.videoHeight);
+    const list = await readNumbers(video, r.x, r.y, r.w, r.h, 1600);
+    if (mode === "live" && !paused) acceptFrame(list);
+    setState("읽는 중", "live");
   } catch (e) {
     console.error(e);
+    setState("글자 인식을 불러오지 못했어요. 새로고침해 주세요.");
   } finally {
     busy = false;
   }
@@ -228,56 +319,140 @@ function loop() {
   tick();
   requestAnimationFrame(loop);
 }
+let looping = false;
+function ensureLoop() { if (!looping) { looping = true; requestAnimationFrame(loop); } }
 
-async function start() {
-  $("msg").textContent = "";
-  $("go").disabled = true;
-  $("go").textContent = "켜는 중…";
-  try {
-    if (!navigator.mediaDevices?.getUserMedia) throw new Error("insecure");
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } },
-      audio: false,
-    });
-    video.srcObject = stream;
-    await video.play();
-  } catch (e) {
-    $("go").disabled = false; $("go").textContent = "카메라 켜기";
-    $("msg").textContent = e.message === "insecure"
-      ? "카메라는 https:// 주소에서만 켤 수 있어요."
-      : "카메라를 켤 수 없어요. 브라우저 설정에서 카메라를 허용해 주세요.";
-    return;
-  }
-  $("start").hidden = true;
-  setState("글자 인식 준비 중 (처음 한 번 몇 초)");
-  requestAnimationFrame(loop);
-  try {
-    worker = await Tesseract.createWorker("eng");
-    await worker.setParameters({
-      tessedit_char_whitelist: "0123456789.,-",
-      tessedit_pageseg_mode: "11",
-    });
-    setState("읽는 중", "live");
-  } catch (e) {
-    console.error(e);
-    setState("글자 인식을 불러오지 못했어요. 인터넷 연결을 확인하고 새로고침하세요.");
+function updateButtons() {
+  if (mode === "photo") {
+    $("pause").textContent = cameraOn ? "카메라로" : "카메라 켜기";
+    $("photoBtn").firstChild.textContent = "다른 사진";
+  } else {
+    $("pause").textContent = paused ? "다시 읽기" : "멈추기";
+    $("photoBtn").firstChild.textContent = "사진";
   }
 }
 
-$("go").onclick = start;
-$("pause").onclick = () => {
+async function startCamera() {
+  if (!navigator.mediaDevices?.getUserMedia) throw new Error("insecure");
+  const stream = await navigator.mediaDevices.getUserMedia({
+    video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+    audio: false,
+  });
+  video.srcObject = stream;
+  await video.play();
+  cameraOn = true;
+}
+
+function enterLive() {
+  mode = "live"; paused = false; history = []; found = [];
+  img.hidden = true; video.hidden = false;
+  video.play().catch(() => {});
+  showTotals(); updateButtons();
+  setState("읽는 중", "live");
+}
+
+async function openPhoto(file) {
+  if (!file) return;
+  $("start").hidden = true;
+  mode = "photo"; paused = true; found = []; history = [];
+  video.pause(); video.hidden = true;
+  if (img.src) URL.revokeObjectURL(img.src);
+  await new Promise((res) => { img.onload = img.onerror = res; img.src = URL.createObjectURL(file); });
+  img.hidden = false;
+  if (!img.naturalWidth) { setState("이 사진을 열 수 없어요. 다른 사진으로 해 보세요."); return; }
+  updateButtons(); showTotals(); ensureLoop();
+  setState("사진 읽는 중 (몇 초 걸려요)", "busy");
+  $("nums").textContent = "숫자를 찾는 중…";
+  while (busy) await new Promise(r => setTimeout(r, 50));   // let a live frame finish first
+  await rereadPhoto();
+}
+
+async function rereadPhoto() {
+  setState("사진 읽는 중 (몇 초 걸려요)", "busy");
+  busy = true;
+  try {
+    const target = Math.min(2400, Math.max(img.naturalWidth, 1600));
+    found = await readNumbers(img, 0, 0, img.naturalWidth, img.naturalHeight, target);
+    setState("사진 · 숫자 " + found.length + "개", "paused");
+  } catch (e) {
+    console.error(e);
+    setState("사진을 읽지 못했어요. 다른 사진으로 해 보세요.");
+  } finally {
+    busy = false;
+  }
+  showTotals();
+}
+
+$("go").onclick = async () => {
+  $("msg").textContent = "";
+  $("go").disabled = true; $("go").textContent = "켜는 중…";
+  try {
+    await startCamera();
+  } catch (e) {
+    $("go").disabled = false; $("go").textContent = "카메라 켜기";
+    $("msg").textContent = e.message === "insecure"
+      ? "카메라는 https:// 주소에서만 켤 수 있어요. 사진으로 하기는 쓸 수 있어요."
+      : "카메라를 켤 수 없어요. 브라우저 설정에서 카메라를 허용하거나 사진으로 해 보세요.";
+    return;
+  }
+  $("start").hidden = true;
+  enterLive();
+  setState("글자 인식 준비 중 (처음 한 번 몇 초)", "busy");
+  getWorker().catch(() => setState("글자 인식을 불러오지 못했어요. 인터넷 연결을 확인하고 새로고침하세요."));
+  ensureLoop();
+};
+
+$("pause").onclick = async () => {
+  if (mode === "photo") {
+    if (!cameraOn) {
+      try { await startCamera(); } catch { setState("카메라를 켤 수 없어요. 사진으로 계속 쓸 수 있어요."); return; }
+    }
+    enterLive();
+    return;
+  }
   paused = !paused;
-  $("pause").textContent = paused ? "다시 읽기" : "멈추기";
   if (paused) { video.pause(); setState("멈춤 · 합계 고정", "paused"); }
   else { video.play(); history = []; setState("읽는 중", "live"); }
+  updateButtons(); showTotals();
 };
+
+$("photoInput").onchange = (e) => { openPhoto(e.target.files[0]); e.target.value = ""; };
+$("startPhoto").onchange = (e) => { openPhoto(e.target.files[0]); e.target.value = ""; };
+
+// Tap a number (while paused or on a photo) to leave it out of the total.
+$("stage").addEventListener("click", (e) => {
+  if (!(paused || mode === "photo") || !found.length) return;
+  const rect = overlay.getBoundingClientRect();
+  const { s, ox, oy } = mapper();
+  const px = (e.clientX - rect.left - ox) / s, py = (e.clientY - rect.top - oy) / s;
+  const pad = 14 / s;
+  let best = null, bestD = Infinity;
+  for (const f of found) {
+    if (px < f.x - pad || px > f.x + f.w + pad || py < f.y - pad || py > f.y + f.h + pad) continue;
+    const d = Math.hypot(px - (f.x + f.w / 2), py - (f.y + f.h / 2));
+    if (d < bestD) { bestD = d; best = f; }
+  }
+  if (best) { best.on = !best.on; showTotals(); }
+});
+
 $("copy").onclick = async () => {
   const text = $("total").textContent.replace(/,/g, "");
   try { await navigator.clipboard.writeText(text); $("copy").textContent = "복사했어요"; }
   catch { $("copy").textContent = text; }
   setTimeout(() => { $("copy").textContent = "합계 복사"; }, 1800);
 };
-$("commaDec").onchange = () => { history = []; };
+// Re-read a photo when an option changes; live mode picks it up on the next frame.
+function optionChanged() {
+  history = [];
+  try { localStorage.setItem("numsum-opts", JSON.stringify({ decOnly: $("decOnly").checked, commaDec: $("commaDec").checked })); } catch {}
+  if (mode === "photo" && img.naturalWidth && !busy) rereadPhoto();
+}
+$("commaDec").onchange = optionChanged;
+$("decOnly").onchange = optionChanged;
+try {
+  const o = JSON.parse(localStorage.getItem("numsum-opts") || "{}");
+  $("decOnly").checked = !!o.decOnly; $("commaDec").checked = !!o.commaDec;
+} catch {}
 </script>
 </body>
 </html>
